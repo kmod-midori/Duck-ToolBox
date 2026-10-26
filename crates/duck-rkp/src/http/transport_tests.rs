@@ -17,6 +17,7 @@ use crate::cbor::{bytes, encode, int};
 struct Server {
     origin: String,
     requests: Arc<Mutex<Vec<String>>>,
+    bodies: Arc<Mutex<Vec<Vec<u8>>>>,
     stop: Arc<AtomicBool>,
     worker: Option<JoinHandle<()>>,
 }
@@ -32,6 +33,8 @@ impl Server {
         let origin = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
         let requests = Arc::new(Mutex::new(Vec::new()));
+        let bodies = Arc::new(Mutex::new(Vec::new()));
+        let recorded_bodies = bodies.clone();
         let stop = Arc::new(AtomicBool::new(false));
         let (recorded, stopping) = (requests.clone(), stop.clone());
         let worker = thread::spawn(move || {
@@ -41,7 +44,8 @@ impl Server {
                     continue;
                 };
                 socket.set_nonblocking(false).unwrap();
-                let path = read_request(&mut socket);
+                let (path, body_bytes) = read_request(&mut socket);
+                recorded_bodies.lock().unwrap().push(body_bytes);
                 recorded.lock().unwrap().push(path);
                 write!(
                     socket,
@@ -61,6 +65,7 @@ impl Server {
         Self {
             origin,
             requests,
+            bodies,
             stop,
             worker: Some(worker),
         }
@@ -81,7 +86,7 @@ impl Drop for Server {
     }
 }
 
-fn read_request(socket: &mut TcpStream) -> String {
+fn read_request(socket: &mut TcpStream) -> (String, Vec<u8>) {
     socket
         .set_read_timeout(Some(Duration::from_secs(3)))
         .unwrap();
@@ -109,7 +114,10 @@ fn read_request(socket: &mut TcpStream) -> String {
         assert!(size > 0);
         data.extend_from_slice(&buffer[..size]);
     }
-    header.lines().next().unwrap().to_string()
+    (
+        header.lines().next().unwrap().to_string(),
+        data[end..end + length].to_vec(),
+    )
 }
 
 fn eek_response() -> Vec<u8> {
@@ -345,4 +353,65 @@ fn assert_rpc_request(server: &Server, path: &str) {
     let pairs: Vec<_> = url.query_pairs().collect();
     assert_eq!(pairs.len(), 1);
     assert_eq!(pairs[0].0, "request_id");
+}
+
+#[test]
+fn eek_payload_uses_only_the_server_host() {
+    for (endpoint, expected) in [
+        (
+            "https://remoteprovisioning.googleapis.com/v1",
+            "remoteprovisioning.googleapis.com",
+        ),
+        (
+            "https://proxy.example:8443/custom/version/",
+            "proxy.example",
+        ),
+        ("http://127.0.0.1:8080/v1", "127.0.0.1"),
+        ("http://localhost:8080/", "localhost"),
+        ("http://[::1]:8080/v1", "[::1]"),
+    ] {
+        let url = super::transport::rpc_url(endpoint, "fetchEekChain").unwrap();
+        let payload = super::transport::fetch_eek_payload("synthetic", 123, 9, &url).unwrap();
+        assert_eek_payload(&payload, expected, 123, 9);
+    }
+}
+
+#[tokio::test]
+async fn both_eek_fetch_paths_send_default_hostname() {
+    for challenge_only in [false, true] {
+        let server = Server::start(200, eek_response());
+        let endpoint = format!("{}/custom/version/", server.origin);
+        let client = rkp_client().unwrap();
+        let (id, version) = if challenge_only {
+            fetch_challenge(&client, "synthetic", &endpoint)
+                .await
+                .unwrap();
+            (42, 37)
+        } else {
+            fetch_eek(&client, "synthetic", &endpoint, 123, 9)
+                .await
+                .unwrap();
+            (123, 9)
+        };
+        let bodies = server.bodies.lock().unwrap();
+        assert_eq!(bodies.len(), 1);
+        assert_eek_payload(&bodies[0], "127.0.0.1", id, version);
+    }
+}
+
+fn assert_eek_payload(body: &[u8], hostname: &str, id: i128, version: i128) {
+    use crate::cbor::{as_map, decode, map_get_text, text};
+    let payload = decode(body).unwrap();
+    let fields = as_map(&payload, "fetchEekChain request").unwrap();
+    assert_eq!(fields.len(), 4);
+    assert_eq!(
+        map_get_text(fields, "default_hostname"),
+        Some(&text(hostname))
+    );
+    assert_eq!(
+        map_get_text(fields, "fingerprint"),
+        Some(&text("synthetic"))
+    );
+    assert_eq!(map_get_text(fields, "id"), Some(&int(id)));
+    assert_eq!(map_get_text(fields, "version"), Some(&int(version)));
 }

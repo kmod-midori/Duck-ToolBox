@@ -4,14 +4,14 @@ use reqwest::{Client, StatusCode};
 use serde::Serialize;
 
 use crate::{
-    cbor::{as_array, as_bytes, as_i128, as_map, decode, encode, int, map_get},
+    cbor::{as_array, as_bytes, as_i128, as_map, decode, encode, map_get},
     cose::{RPC_CURVE_25519, RPC_CURVE_P256},
     error::RkpError,
 };
 
 mod transport;
 pub use transport::{fetch_challenge, rkp_client, validate_endpoint};
-use transport::{read_body, rpc_url};
+use transport::{fetch_eek_payload, read_body, rpc_url};
 
 pub const RKP_SERVER_URL: &str = "https://remoteprovisioning.googleapis.com/v1";
 
@@ -60,14 +60,7 @@ pub async fn fetch_eek(
     version: i64,
 ) -> Result<EekResponse> {
     let url = rpc_url(server_url, "fetchEekChain")?;
-    let payload = encode(&Value::Map(vec![
-        (
-            Value::Text("fingerprint".into()),
-            Value::Text(fingerprint.into()),
-        ),
-        (Value::Text("id".into()), int(id.into())),
-        (Value::Text("version".into()), int(version.into())),
-    ]))?;
+    let payload = fetch_eek_payload(fingerprint, id, version, &url)?;
 
     let response = client
         .post(url)

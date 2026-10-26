@@ -70,16 +70,28 @@ pub fn rkp_client() -> Result<Client> {
     Ok(builder.build()?)
 }
 
+pub(super) fn fetch_eek_payload(
+    fingerprint: &str,
+    id: i64,
+    version: i64,
+    url: &Url,
+) -> Result<Vec<u8>> {
+    let hostname = url.host_str().ok_or(RkpError::InvalidEndpoint)?;
+    encode(&Value::Map(vec![
+        (text("fingerprint"), text(fingerprint)),
+        (text("id"), int(id.into())),
+        (text("version"), int(version.into())),
+        (text("default_hostname"), text(hostname)),
+    ]))
+}
+
 pub async fn fetch_challenge(
     client: &Client,
     fingerprint: &str,
     server_url: &str,
 ) -> Result<Vec<u8>> {
     let url = rpc_url(server_url, "fetchEekChain")?;
-    let payload = encode(&Value::Map(vec![
-        (text("fingerprint"), text(fingerprint)),
-        (text("id"), int(42)),
-    ]))?;
+    let payload = fetch_eek_payload(fingerprint, 42, 37, &url)?;
     let response = client
         .post(url)
         .header("Content-Type", "application/cbor")

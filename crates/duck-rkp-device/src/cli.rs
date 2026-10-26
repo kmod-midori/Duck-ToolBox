@@ -29,8 +29,8 @@ pub enum Command {
         /// Build fingerprint sent to `fetchEekChain` instead of the device's own.
         #[arg(long)]
         fingerprint: Option<String>,
-        /// ID sent to `fetchEekChain`.
-        #[arg(long, default_value_t = 42)]
+        /// ID sent to `fetchEekChain` (0 through 999999).
+        #[arg(long, default_value_t = 42, value_parser = clap::value_parser!(i64).range(0..1_000_000))]
         id: i64,
         /// Version sent to `fetchEekChain`.
         #[arg(long, default_value_t = 37)]
