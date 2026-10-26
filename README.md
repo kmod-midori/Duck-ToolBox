@@ -65,6 +65,7 @@ changed, removed or added on its own.
     TrustKernel KPH adapter described below. Real-device
     compatibility and production server acceptance for MediaTek remain unverified.
   - Select `auto`, `v1`, `v2` or `v1-native` in the WebUI or with `rkp-device provision --protocol`.
+  - Set the `fetchEekChain` request fields with `rkp-device provision --id 42 --version 37` (shown values are the defaults).
     Automatic mode tries the available methods in order: V2, AIDL V1, then native V1.
     Each failed signing, CSR validation, server request or certificate validation moves
     to the next method with a fresh challenge. It stops at the first complete success;

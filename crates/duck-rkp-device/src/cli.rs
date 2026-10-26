@@ -29,6 +29,12 @@ pub enum Command {
         /// Build fingerprint sent to `fetchEekChain` instead of the device's own.
         #[arg(long)]
         fingerprint: Option<String>,
+        /// ID sent to `fetchEekChain`.
+        #[arg(long, default_value_t = 42)]
+        id: i64,
+        /// Version sent to `fetchEekChain`.
+        #[arg(long, default_value_t = 37)]
+        version: i64,
         /// RKP server base URL (for example a local proxy during development).
         #[arg(long)]
         server_url: Option<String>,
@@ -56,6 +62,8 @@ fn dispatch<'a>(command: Command, ctx: &'a Context) -> BoxFuture<'a, CommandResu
                 acknowledge_limitations,
                 fingerprint,
                 server_url,
+                id,
+                version,
                 output,
             } => {
                 let options = service::Options {
@@ -63,7 +71,7 @@ fn dispatch<'a>(command: Command, ctx: &'a Context) -> BoxFuture<'a, CommandResu
                     fingerprint,
                     output: output.map(|path| ctx.paths.resolve_in_root(&path)),
                 };
-                let server = service::Google::new(server_url);
+                let server = service::Google::new(server_url, id, version);
                 match server {
                     Ok(server) => service::provision(
                         ctx,

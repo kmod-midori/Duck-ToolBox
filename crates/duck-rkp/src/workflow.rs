@@ -75,7 +75,7 @@ pub(crate) async fn issue(
     let challenge = fetch_challenge(&client, fingerprint, server_url).await?;
     let csr = build(&challenge, &public_keys)?;
     let report = validate_request_binding(&csr, &challenge, &public_keys)?;
-    let response = submit_csr(&client, &csr, &challenge, server_url).await?;
+    let response = submit_csr(&client, &csr, server_url).await?;
     let mut keys = Vec::new();
     for pair in pairs {
         let expected = pair.secret_key.public_key().to_sec1_bytes();

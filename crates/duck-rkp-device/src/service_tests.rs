@@ -499,17 +499,17 @@ async fn provision_mirrors_the_keybox_to_an_explicit_output() {
 
 #[test]
 fn google_accepts_a_server_override() {
-    let server = super::Google::new(Some("https://example.invalid/v1".into())).unwrap();
+    let server = super::Google::new(Some("https://example.invalid/v1".into()), 42, 37).unwrap();
     assert!(format!("{server:?}").contains("example.invalid"));
 }
 
 #[test]
 fn google_validates_and_normalizes_the_server_endpoint() {
     for url in ["", "  ", "file:///tmp/rkp", "not a URL"] {
-        let error = super::Google::new(Some(url.into())).unwrap_err();
+        let error = super::Google::new(Some(url.into()), 42, 37).unwrap_err();
         assert_eq!(crate::error::code_of(&error), "invalid_server_url");
     }
-    let server = super::Google::new(Some(" https://example.invalid/v1/  ".into())).unwrap();
+    let server = super::Google::new(Some(" https://example.invalid/v1/  ".into()), 42, 37).unwrap();
     assert_eq!(server.server_url, "https://example.invalid/v1");
 }
 

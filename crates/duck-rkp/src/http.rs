@@ -1,5 +1,4 @@
 use anyhow::{Context, Result, anyhow};
-use base64ct::{Base64Url, Encoding};
 use ciborium::value::Value;
 use reqwest::{Client, StatusCode};
 use serde::Serialize;
@@ -57,6 +56,8 @@ pub async fn fetch_eek(
     client: &Client,
     fingerprint: &str,
     server_url: &str,
+    id: i64,
+    version: i64,
 ) -> Result<EekResponse> {
     let url = rpc_url(server_url, "fetchEekChain")?;
     let payload = encode(&Value::Map(vec![
@@ -64,7 +65,8 @@ pub async fn fetch_eek(
             Value::Text("fingerprint".into()),
             Value::Text(fingerprint.into()),
         ),
-        (Value::Text("id".into()), int(42)),
+        (Value::Text("id".into()), int(id.into())),
+        (Value::Text("version".into()), int(version.into())),
     ]))?;
 
     let response = client
@@ -88,13 +90,9 @@ pub async fn fetch_eek(
 pub async fn submit_csr(
     client: &Client,
     csr_bytes: &[u8],
-    challenge: &[u8],
     server_url: &str,
 ) -> Result<Vec<Vec<u8>>> {
-    let mut url = rpc_url(server_url, "signCertificates")?;
-    url.query_pairs_mut()
-        .append_pair("challenge", &Base64Url::encode_string(challenge));
-
+    let url = rpc_url(server_url, "signCertificates")?;
     let response = client
         .post(url)
         .header("Content-Type", "application/cbor")

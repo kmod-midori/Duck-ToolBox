@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, anyhow, ensure};
 use ciborium::value::Value;
 use reqwest::{Client, Response, Url, redirect::Policy};
 
@@ -38,6 +38,21 @@ fn endpoint_url(value: &str) -> Result<Url> {
 pub(super) fn rpc_url(endpoint: &str, method: &str) -> Result<Url> {
     let mut url = endpoint_url(endpoint)?;
     url.set_path(&format!("{}:{method}", url.path()));
+    let mut bytes = [0u8; 16];
+    getrandom::fill(&mut bytes).map_err(|error| anyhow!("generate RPC request ID: {error}"))?;
+    // UUID v4: random bits with the version and RFC variant fixed.
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+    let hex = hex::encode(bytes);
+    let request_id = format!(
+        "{}-{}-{}-{}-{}",
+        &hex[..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    );
+    url.query_pairs_mut().append_pair("request_id", &request_id);
     Ok(url)
 }
 

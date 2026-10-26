@@ -104,10 +104,12 @@ impl Exchange for Device<'_> {
 pub(crate) struct Google {
     client: Client,
     server_url: String,
+    id: i64,
+    version: i64,
 }
 
 impl Google {
-    pub(crate) fn new(server_url: Option<String>) -> Result<Self> {
+    pub(crate) fn new(server_url: Option<String>, id: i64, version: i64) -> Result<Self> {
         let server_url = server_url.unwrap_or_else(|| DEFAULT_SERVER_URL.to_owned());
         let server_url = server_url.trim().trim_end_matches('/').to_owned();
         if !is_web_url(&server_url) {
@@ -116,21 +118,32 @@ impl Google {
         Ok(Self {
             client: http_client()?,
             server_url,
+            id,
+            version,
         })
     }
 }
 
 impl Server for Google {
     fn challenge<'a>(&'a self, fingerprint: &'a str) -> BoxFuture<'a, Result<EekResponse>> {
-        Box::pin(async move { fetch_eek(&self.client, fingerprint, &self.server_url).await })
+        Box::pin(async move {
+            fetch_eek(
+                &self.client,
+                fingerprint,
+                &self.server_url,
+                self.id,
+                self.version,
+            )
+            .await
+        })
     }
 
     fn certificates<'a>(
         &'a self,
         csr: &'a [u8],
-        challenge: &'a [u8],
+        _challenge: &'a [u8],
     ) -> BoxFuture<'a, Result<Vec<Vec<u8>>>> {
-        Box::pin(async move { submit_csr(&self.client, csr, challenge, &self.server_url).await })
+        Box::pin(async move { submit_csr(&self.client, csr, &self.server_url).await })
     }
 }
 

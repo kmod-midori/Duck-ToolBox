@@ -152,10 +152,7 @@ async fn challenge_requests_normalize_endpoint_paths() {
             .await
             .unwrap();
         assert_eq!(challenge, [7; 32]);
-        assert_eq!(
-            server.requests(),
-            [format!("POST {expected}:fetchEekChain HTTP/1.1")]
-        );
+        assert_rpc_request(&server, &format!("{expected}:fetchEekChain"));
     }
 }
 
@@ -167,15 +164,14 @@ async fn eek_requests_normalize_endpoint_paths() {
             &rkp_client().unwrap(),
             "synthetic",
             &format!("{}{input}", server.origin),
+            123,
+            9,
         )
         .await
         .unwrap();
         assert_eq!(response.challenge, [7; 32]);
         assert_eq!(response.eek_public, [0x33; 32]);
-        assert_eq!(
-            server.requests(),
-            [format!("POST {expected}:fetchEekChain HTTP/1.1")]
-        );
+        assert_rpc_request(&server, &format!("{expected}:fetchEekChain"));
     }
 }
 
@@ -191,18 +187,12 @@ async fn submission_requests_normalize_endpoint_paths() {
         let chains = submit_csr(
             &rkp_client().unwrap(),
             b"synthetic CSR",
-            &[1, 2, 3],
             &format!("{}{input}", server.origin),
         )
         .await
         .unwrap();
         assert_eq!(chains, [vec![1, 2]]);
-        assert_eq!(
-            server.requests(),
-            [format!(
-                "POST {expected}:signCertificates?challenge=AQID HTTP/1.1"
-            )]
-        );
+        assert_rpc_request(&server, &format!("{expected}:signCertificates"));
     }
 }
 
@@ -228,8 +218,10 @@ async fn every_rpc_rejects_unsafe_endpoints_before_sending() {
                 0 => fetch_challenge(&client, "synthetic", &endpoint)
                     .await
                     .map(|_| ()),
-                1 => fetch_eek(&client, "synthetic", &endpoint).await.map(|_| ()),
-                _ => submit_csr(&client, b"synthetic CSR", &[1], &endpoint)
+                1 => fetch_eek(&client, "synthetic", &endpoint, 42, 37)
+                    .await
+                    .map(|_| ()),
+                _ => submit_csr(&client, b"synthetic CSR", &endpoint)
                     .await
                     .map(|_| ()),
             }
@@ -249,7 +241,6 @@ async fn assert_submission_error(server: &Server, expected_reason: &str) -> anyh
     let error = submit_csr(
         &rkp_client().unwrap(),
         b"synthetic CSR",
-        &[1, 2, 3],
         &format!("{}/v1", server.origin),
     )
     .await
@@ -259,10 +250,7 @@ async fn assert_submission_error(server: &Server, expected_reason: &str) -> anyh
     let diagnostics = format!("{error:#} {error:?}");
     assert!(diagnostics.contains(expected_reason), "{diagnostics}");
     assert!(!diagnostics.contains("synthetic-response-secret"));
-    assert_eq!(
-        server.requests(),
-        ["POST /v1:signCertificates?challenge=AQID HTTP/1.1"]
-    );
+    assert_rpc_request(server, "/v1:signCertificates");
     error
 }
 
@@ -334,7 +322,6 @@ async fn explicit_http_rejection_retains_server_codes_without_body_or_retry() {
         let error = submit_csr(
             &rkp_client().unwrap(),
             b"synthetic CSR",
-            &[1],
             &format!("{}/v1", server.origin),
         )
         .await
@@ -343,4 +330,19 @@ async fn explicit_http_rejection_retains_server_codes_without_body_or_retry() {
         assert!(!format!("{error:#} {error:?}").contains("synthetic-response-secret"));
         assert_eq!(server.requests().len(), 1);
     }
+}
+
+fn assert_rpc_request(server: &Server, path: &str) {
+    let requests = server.requests();
+    assert_eq!(requests.len(), 1);
+    let target = requests[0]
+        .strip_prefix("POST ")
+        .unwrap()
+        .strip_suffix(" HTTP/1.1")
+        .unwrap();
+    let url = reqwest::Url::parse(&format!("{}{target}", server.origin)).unwrap();
+    assert_eq!(url.path(), path);
+    let pairs: Vec<_> = url.query_pairs().collect();
+    assert_eq!(pairs.len(), 1);
+    assert_eq!(pairs[0].0, "request_id");
 }
